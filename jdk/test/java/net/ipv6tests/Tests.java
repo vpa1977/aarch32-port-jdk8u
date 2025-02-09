@@ -39,27 +39,32 @@ public class Tests {
     public static void simpleDataExchange (Socket s1, Socket s2)
         throws Exception {
 
+        dprintln("simpleDataExchange (Socket s1, Socket s2)");
         InputStream i1 = s1.getInputStream();
         InputStream i2 = s2.getInputStream();
         OutputStream o1 = s1.getOutputStream();
         OutputStream o2 = s2.getOutputStream();
-
-        startSimpleWriter("SimpleWriter-1", o1, 100);
-        startSimpleWriter("SimpleWriter-2", o2, 200);
+        startSimpleWriter(s1, "SimpleWriter-1", o1, 100);
+        startSimpleWriter(s2, "SimpleWriter-2", o2, 200);
         simpleRead (i2, 100);
         simpleRead (i1, 200);
     }
 
-    static void startSimpleWriter(String threadName, final OutputStream os, final int start) {
+    static void startSimpleWriter(final Socket s, String threadName, final OutputStream os, final int start) {
+        dprintln("Before thread: Start writer for " + s.getLocalAddress().toString() + ":" + s.getLocalPort());
         (new Thread(new Runnable() {
             public void run() {
+                dprintln("Start writer for " + s.getLocalAddress().toString() + ":" + s.getLocalPort());
                 try { simpleWrite(os, start); }
-                catch (Exception e) {unexpected(e); }
+                catch (Exception e) {
+                    dprintln("Exception: socket " + s.getLocalAddress().toString() + ":" + s.getLocalPort());
+                    unexpected(e);
+                    }
             }}, threadName)).start();
     }
 
     static void unexpected(Exception e ) {
-        System.out.println("Unexcepted Exception: " + e);
+        dprintln("Unexcepted Exception: " + e);
         e.printStackTrace();
     }
 

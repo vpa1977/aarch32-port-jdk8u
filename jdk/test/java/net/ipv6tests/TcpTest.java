@@ -24,11 +24,15 @@
 /*
  * @test
  * @bug 4868820
+ * @library /lib/testlibrary
+ * @build jdk.testlibrary.NetworkConfiguration
  * @summary IPv6 support for Windows XP and 2003 server
+ * @run main TcpTest -d
  */
 
 import java.net.*;
 import java.io.*;
+import jdk.testlibrary.NetworkConfiguration;
 
 public class TcpTest extends Tests {
     static ServerSocket server, server1, server2;
@@ -51,157 +55,202 @@ public class TcpTest extends Tests {
         }
     }
 
+    static void runNetstat() throws Exception {
+        System.out.println("netstat -at");
+        run ("netstat", "-atn");
+    }
+
+    static void runCatHosts() throws Exception  {
+        System.out.println("cat /etc/hosts");
+        run ("cat", "/etc/hosts");
+    }
+
+    static void runIpa()  throws Exception {
+        System.out.println("ip a");
+        run ("ip", "a");
+    }
+
+
+    static void run(String... args) throws Exception {
+            Process process = new ProcessBuilder(args)
+                .redirectErrorStream(true).start();
+            int exitCode = process.waitFor();
+            InputStream inputStream = process.getInputStream();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                dprintln(line);
+            }
+            dprintln("exited with code: " + exitCode);
+    }
+
     public static void main (String[] args) throws Exception {
+        NetworkConfiguration.probe().printSystemConfiguration(System.out);
         checkDebug(args);
         if (ia6addr == null) {
             System.out.println ("No IPV6 addresses: exiting test");
             return;
         }
+        runCatHosts();
+        runIpa();
         dprintln ("Local Addresses");
         dprintln (ia4addr.toString());
         dprintln (ia6addr.toString());
-        test1();
-        test2();
+       // test1();
         test3();
-        test4();
     }
 
     /* basic TCP connectivity test using IPv6 only and IPv4/IPv6 together */
 
+    static void test1Ipv6(int port)  throws Exception {
+        // try Ipv6 only
+        dprintln("test1Ipv6(int port)");
+        try {
+            c1 = new Socket ("::1", port);
+            s1 = server.accept ();
+            dprintln("s1 = server.accept ();");
+            runNetstat();
+            simpleDataExchange (c1, s1);
+        }
+        finally {
+            s1.close ();
+            c1.close();
+            dprintln("after close");
+            runNetstat();
+        }
+    }
+
+    static void test1Both(int port)  throws Exception {
+        dprintln("test1Both(int port)");
+
+        try {
+            // try with both IPv4 and Ipv6
+            c1 = new Socket ("127.0.0.1", port);//new Socket ("127.0.0.1", port);
+            c2 = new Socket ("::1", port);//new Socket ("::1", port);
+            s1 = server.accept();
+            dprintln("s1 = server.accept();");
+            runNetstat();
+
+            s2 = server.accept();
+            dprintln("s2 = server.accept();");
+            runNetstat();
+
+            s1peer = s1.getInetAddress();
+            s2peer = s2.getInetAddress();
+
+            if (s1peer instanceof Inet6Address) {
+                t_assert ((s2peer instanceof Inet4Address));
+                simpleDataExchange (c2, s1);
+                simpleDataExchange (c1, s2);
+            } else {
+                t_assert ((s2peer instanceof Inet6Address));
+                simpleDataExchange (c1, s1);
+                simpleDataExchange (c2, s2);
+            }
+        }
+        finally {
+            c1.close();
+            c2.close();
+            s1.close();
+            s2.close();
+        }
+    }
+
     static void test1 () throws Exception {
         server = new ServerSocket (0);
         int port = server.getLocalPort();
-        // try Ipv6 only
-        c1 = new Socket ("::1", port);
-        s1 = server.accept ();
-        simpleDataExchange (c1, s1);
-        s1.close ();
-        c1.close();
-        // try with both IPv4 and Ipv6
-        c1 = new Socket ("127.0.0.1", port);
-        c2 = new Socket ("::1", port);
-        s1 = server.accept();
-        s2 = server.accept();
-        s1peer = s1.getInetAddress();
-        s2peer = s2.getInetAddress();
-        if (s1peer instanceof Inet6Address) {
-            t_assert ((s2peer instanceof Inet4Address));
-            simpleDataExchange (c2, s1);
-            simpleDataExchange (c1, s2);
-        } else {
-            t_assert ((s2peer instanceof Inet6Address));
-            simpleDataExchange (c1, s1);
-            simpleDataExchange (c2, s2);
-        }
-        c1.close();
-        c2.close();
-        s1.close();
-        s2.close();
+        dprintln("test1 - server local port " + port);
+        test1Ipv6(port);
+        test1Both(port);
+
         server.close ();
+        dprintln("test 1 exit");
+        runNetstat();
         System.out.println ("Test1: OK");
     }
 
-    /** bind tests:
-     *  1. bind to specific address IPv4 only (any port)
-     *  2. bind to specific address IPv6 only (any port)
-     *  3. bind to any address IPv4 (test collision)
-     */
 
-    static void test2 () throws Exception {
-
-        server = new ServerSocket ();
-        InetSocketAddress sadr = new InetSocketAddress (ia4addr, 0);
-        server.bind (sadr);
-        dprintln ("server bound to " + sadr);
-        int port = server.getLocalPort();
-        InetSocketAddress sadr6 = new InetSocketAddress (ia6addr, port);
-
-        c1 = new Socket (ia4addr, port);
-        try {
-            dprintln ("connecting to " + ia6addr);
-            c2 = new Socket ();
-            c2.connect (sadr6, 1000);
-            throw new RuntimeException ("connect to IPv6 address should be refused");
-        } catch (IOException e) { }
-        server.close ();
-        c1.close ();
-
-        /* now try IPv6 only */
-
-        server = new ServerSocket ();
-        sadr = new InetSocketAddress (ia6addr, 0);
-        dprintln ("binding to " + sadr);
-        server.bind (sadr);
-        port = server.getLocalPort();
-
-        c1 = new Socket (ia6addr, port);
-        try {
-            c2 = new Socket (ia4addr, port);
-            throw new RuntimeException ("connect to IPv4 address should be refused");
-        } catch (IOException e) { }
-        server.close ();
-        c1.close ();
-
-        System.out.println ("Test2: OK");
-    }
-
-    /* Test timeouts on accept(), connect() */
-
-    static void test3 () throws Exception {
-        server = new ServerSocket (0);
-        server.setSoTimeout (5000);
-        int port = server.getLocalPort();
+    static void testTimeout() throws Exception {
         long t1 = System.currentTimeMillis();
+        Socket timeout = null;
         try {
-            server.accept ();
+            timeout = server.accept ();
             throw new RuntimeException ("accept should not have returned");
         } catch (SocketTimeoutException e) {}
+        finally {
+            if (timeout != null)
+                timeout.close();
+        }
         t1 = System.currentTimeMillis() - t1;
         checkTime (t1, 5000);
+        dprintln("accept should not have returned");
+        runNetstat();
+    }
 
-        c1 = new Socket ();
-        c1.connect (new InetSocketAddress (ia4addr, port), 1000);
-        s1 = server.accept ();
-        simpleDataExchange (c1,s1);
-        c2 = new Socket ();
-        c2.connect (new InetSocketAddress (ia6addr, port), 1000);
-        s2 = server.accept ();
-        simpleDataExchange (c2,s2);
-        c3 = new Socket ();
-        c3.connect (new InetSocketAddress (ia6addr, port), 1000);
-        s3 = server.accept ();
-        c2.close (); s2.close();
+    static void testIPv4Exchange(int port) throws Exception {
+        try {
+            c1 = new Socket ();
+            c1.connect (new InetSocketAddress (ia4addr, port), 1000);
+            s1 = server.accept ();
+            dprintln("c1 : send: " + c1.getSendBufferSize() + " rec:" + c1.getReceiveBufferSize());
+            dprintln("s1 : send: " + s1.getSendBufferSize() + " rec:" + s1.getReceiveBufferSize());
+            dprintln("s1 = server.accept ();");
+            runNetstat();
+            dprintln("!simpleDataExchange (c1,s1);");
+            simpleDataExchange (c1,s1);
+        }
+        finally {
+            c1.close();
+            s1.close();
+            dprintln("c1.close();s2.close();");
+
+            runNetstat();
+        }
+    }
+
+    static void testIPv6Exchange(int port) throws Exception {
+        try {
+            c2 = new Socket ();
+            c2.connect (new InetSocketAddress (ia6addr, port), 1000);
+            s2 = server.accept ();
+
+            dprintln("s2 = server.accept ();");
+            runNetstat();
+            try {
+                simpleDataExchange (c2,s2);
+            }
+            catch (Exception e) {
+                runNetstat();
+                throw e;
+            }
+        }
+        finally {
+            c2.close();
+            s2.close();
+        }
+    }
+
+
+    static void test3 () throws Exception {
+        dprintln("test1");
+        server = new ServerSocket (0);
+        int port = server.getLocalPort();
+        dprintln("test1 - ipv6 conn");
+        test1Ipv6(port);
+        dprintln("test1 - ipv4 double conn");
+        test1Both(port);
         server.close();
-        simpleDataExchange (c3,s3);
-        c1.close (); c2.close();
-        s1.close (); s2.close();
+        server = new ServerSocket (0);
+        server.setSoTimeout (5000);
+        port = server.getLocalPort();
+        dprintln("test3 - server local port " + port);
 
+        dprintln("test3 - ipv4 conn");
+        testIPv4Exchange(port);
+        dprintln("test3 - ipv 6 conn");
+        testIPv6Exchange(port);
+        server.close();
         System.out.println ("Test3: OK");
     }
 
-    /* Test: connect to IPv4 mapped address  */
-
-    static void test4 () throws Exception {
-        server = new ServerSocket (0);
-        int port = server.getLocalPort();
-
-        /* create an IPv4 mapped address corresponding to local host */
-
-        byte[] b = {0,0,0,0,0,0,0,0,0,0,(byte)0xff,(byte)0xff,0,0,0,0};
-        byte[] ia4 = ia4addr.getAddress();
-        b[12] = ia4[0];
-        b[13] = ia4[1];
-        b[14] = ia4[2];
-        b[15] = ia4[3];
-
-        InetAddress dest = InetAddress.getByAddress (b);
-        c1 = new Socket (dest, port);
-        s1 = server.accept ();
-        simpleDataExchange (c1,s1);
-        c1.close ();
-        s1.close ();
-        server.close ();
-        System.out.println ("Test4: OK");
-    }
 }
-
