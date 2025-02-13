@@ -126,11 +126,11 @@ public class TcpTest extends Tests {
         try {
             // try with both IPv4 and Ipv6
             c1 = new Socket ("127.0.0.1", port);//new Socket ("127.0.0.1", port);
-            c2 = new Socket ("::1", port);//new Socket ("::1", port);
             s1 = server.accept();
             dprintln("s1 = server.accept();");
             runNetstat();
 
+            c2 = new Socket ("::1", port);//new Socket ("::1", port);
             s2 = server.accept();
             dprintln("s2 = server.accept();");
             runNetstat();
@@ -242,7 +242,7 @@ public class TcpTest extends Tests {
         server.close();
         server = new ServerSocket (0);
         server.setSoTimeout (5000);
-        port = server.getLocalPort();
+         port = server.getLocalPort();
         dprintln("test3 - server local port " + port);
 
         dprintln("test3 - ipv4 conn");
@@ -254,3 +254,4 @@ public class TcpTest extends Tests {
     }
 
 }
+
